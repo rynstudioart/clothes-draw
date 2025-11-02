@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Board desen cu manechin</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: #f7f7f7;
+    color: #222;
+    padding: 16px;
+  }
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  button {
+    padding: 8px 14px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    background: white;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  button.active {
+    background: #cde3ff;
+    border-color: #77aaff;
+  }
+  .board-wrap {
+    position: relative;
+    width: 420px;
+    max-width: 95vw;
+    height: 720px;
+    border: 1px solid #ccc;
+    background: white;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+    cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'><text y='24' font-size='24'>✏️</text></svg>") 12 12, auto;
+  }
+  canvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+  }
+  .practice canvas {
+  user-select: none;
+  -webkit-user-select: none; /* iOS Safari */
+  -ms-user-select: none;     /* vechi Edge */
+  touch-action: none;        /* previne scroll accidental */
+  -webkit-touch-callout: none; /* împiedică meniul iOS */
+}
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <button id="saveBtn">💾 Save PNG</button>
+  <button id="clearBtn">🧹 Clear</button>
+  <button id="eraserBtn">🩹 Eraser</button>
+  <button id="pencilBtn" class="active">✏️ Pencil</button>
+  <label>Color <input type="color" id="colorPicker" value="#000000"></label>
+  <label>Size <input type="range" id="sizeRange" min="1" max="30" value="4"></label>
+</div>
+
+<div class="board-wrap" id="boardWrap">
+  <canvas id="baseCanvas"></canvas>
+  <canvas id="drawCanvas"></canvas>
+</div>
+
+<script>
+(function(){
+  // 👇 Imaginea de manechin (via proxy ca să evite CORS Pinterest)
+  const mannequinURL =
+    "https://corsproxy.io/?https://i.pinimg.com/736x/db/93/9f/db939f90bb426dfa3506f43004aefd71.jpg";
+
+  const baseCanvas = document.getElementById("baseCanvas");
+  const drawCanvas = document.getElementById("drawCanvas");
+  const baseCtx = baseCanvas.getContext("2d");
+  const drawCtx = drawCanvas.getContext("2d");
+  const wrap = document.getElementById("boardWrap");
+
+  function resizeCanvases(){
+    const rect = wrap.getBoundingClientRect();
+    [baseCanvas, drawCanvas].forEach(c=>{
+      c.width = rect.width * devicePixelRatio;
+      c.height = rect.height * devicePixelRatio;
+      c.style.width = rect.width+"px";
+      c.style.height = rect.height+"px";
+      const ctx = c.getContext("2d");
+      ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+    });
+    drawBaseImage();
+  }
+
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.onload = drawBaseImage;
+  img.src = mannequinURL;
+
+  function drawBaseImage(){
+    if(!img.complete) return;
+    baseCtx.clearRect(0,0,baseCanvas.width,baseCanvas.height);
+    const cw = baseCanvas.width/devicePixelRatio;
+    const ch = baseCanvas.height/devicePixelRatio;
+    const scale = Math.min(cw/img.width, ch/img.height);
+    const w = img.width*scale;
+    const h = img.height*scale;
+    const x = (cw - w)/2;
+    const y = (ch - h)/2;
+    baseCtx.drawImage(img,x,y,w,h);
+  }
+
+  window.addEventListener("resize", resizeCanvases);
+  setTimeout(resizeCanvases, 100);
+
+  let drawing=false,last={x:0,y:0}, mode="pencil";
+  const colorPicker=document.getElementById("colorPicker");
+  const sizeRange=document.getElementById("sizeRange");
+
+  function getPos(e){
+    const rect=drawCanvas.getBoundingClientRect();
+    const clientX=e.touches?e.touches[0].clientX:e.clientX;
+    const clientY=e.touches?e.touches[0].clientY:e.clientY;
+    return {x:clientX-rect.left,y:clientY-rect.top};
+  }
+
+  function start(e){drawing=true;last=getPos(e);}
+  function move(e){
+    if(!drawing)return;
+    const p=getPos(e);
+    drawCtx.lineJoin="round";
+    drawCtx.lineCap="round";
+    drawCtx.lineWidth=sizeRange.value;
+    if(mode==="eraser"){
+      drawCtx.globalCompositeOperation="destination-out";
+      drawCtx.strokeStyle="rgba(0,0,0,1)";
+    } else {
+      drawCtx.globalCompositeOperation="source-over";
+      drawCtx.strokeStyle=colorPicker.value;
+    }
+    drawCtx.beginPath();
+    drawCtx.moveTo(last.x,last.y);
+    drawCtx.lineTo(p.x,p.y);
+    drawCtx.stroke();
+    last=p;
+  }
+  function end(){drawing=false;}
+
+  drawCanvas.addEventListener("mousedown",start);
+  window.addEventListener("mousemove",move);
+  window.addEventListener("mouseup",end);
+  drawCanvas.addEventListener("touchstart",start,{passive:false});
+  window.addEventListener("touchmove",move,{passive:false});
+  window.addEventListener("touchend",end);
+
+  document.getElementById("clearBtn").onclick=()=>drawCtx.clearRect(0,0,drawCanvas.width,drawCanvas.height);
+
+  document.getElementById("saveBtn").onclick=()=>{
+    const tmp=document.createElement("canvas");
+    tmp.width=drawCanvas.width;
+    tmp.height=drawCanvas.height;
+    const tctx=tmp.getContext("2d");
+    tctx.drawImage(baseCanvas,0,0);
+    tctx.drawImage(drawCanvas,0,0);
+    tmp.toBlob(b=>{
+      const a=document.createElement("a");
+      a.href=URL.createObjectURL(b);
+      a.download="drawing.png";
+      a.click();
+    },"image/png");
+  };
+
+  // 🩹 Tool switching
+  const eraserBtn=document.getElementById("eraserBtn");
+  const pencilBtn=document.getElementById("pencilBtn");
+
+  eraserBtn.onclick=()=>{
+    mode="eraser";
+    eraserBtn.classList.add("active");
+    pencilBtn.classList.remove("active");
+  };
+  pencilBtn.onclick=()=>{
+    mode="pencil";
+    pencilBtn.classList.add("active");
+    eraserBtn.classList.remove("active");
+  };
+})();
+</script>
+
+</body>
+</html>
