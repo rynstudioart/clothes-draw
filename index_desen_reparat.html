@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Board desen cu manechin</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: #f7f7f7;
+    color: #222;
+    padding: 16px;
+  }
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  button {
+    padding: 8px 14px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    background: white;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  button.active {
+    background: #cde3ff;
+    border-color: #77aaff;
+  }
+  .board-wrap {
+    position: relative;
+    width: 420px;
+    max-width: 95vw;
+    height: 720px;
+    border: 1px solid #ccc;
+    background: white;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+    cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'><text y='24' font-size='24'>✏️</text></svg>") 12 12, auto;
+  }
+  canvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+  }
+  .practice canvas {
+  user-select: none;
+  -webkit-user-select: none; /* iOS Safari */
+  -ms-user-select: none;     /* vechi Edge */
+  touch-action: none;        /* previne scroll accidental */
+  -webkit-touch-callout: none; /* împiedică meniul iOS */
+}
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <button id="saveBtn">💾 Save PNG</button>
+  <button id="clearBtn">🧹 Clear</button>
+  <button id="eraserBtn">🩹 Eraser</button>
+  <button id="pencilBtn" class="active">✏️ Pencil</button>
+  <label>Color <input type="color" id="colorPicker" value="#000000"></label>
+  <label>Size <input type="range" id="sizeRange" min="1" max="30" value="4"></label>
+</div>
+
+<div class="board-wrap" id="boardWrap">
+  <canvas id="baseCanvas"></canvas>
+  <canvas id="drawCanvas"></canvas>
+</div>
+
+<script>
+(() => {
+  const baseCanvas = document.getElementById("baseCanvas");
+  const drawCanvas = document.getElementById("drawCanvas");
+  const baseCtx = baseCanvas.getContext("2d");
+  const drawCtx = drawCanvas.getContext("2d");
+  const wrap = document.getElementById("boardWrap");
+  const colorPicker = document.getElementById("colorPicker");
+  const sizeRange = document.getElementById("sizeRange");
+  const saveBtn = document.getElementById("saveBtn");
+  const clearBtn = document.getElementById("clearBtn");
+  const eraserBtn = document.getElementById("eraserBtn");
+  const pencilBtn = document.getElementById("pencilBtn");
+
+  // Keep the original image URL, but load it only once.
+  const mannequinURL =
+    "https://raw.githubusercontent.com/rynstudioart/clothes-draw/main/IMG_1267.jpeg";
+
+  let mode = "pencil";
+  let drawing = false;
+  let last = null;
+  let imageLoaded = false;
+  let imageError = false;
+  let imageBox = null;
+
+  const img = new Image();
+  img.onload = () => {
+    imageLoaded = true;
+    imageError = false;
+    drawBaseImage();
+  };
+  img.onerror = () => {
+    imageError = true;
+    drawBaseImage();
+    console.error("Nu s-a putut încărca imaginea manechinului:", mannequinURL);
+  };
+  img.src = mannequinURL;
+
+  function getDpr() {
+    return Math.max(1, window.devicePixelRatio || 1);
+  }
+
+  function resizeCanvases() {
+    const rect = wrap.getBoundingClientRect();
+    const dpr = getDpr();
+
+    [baseCanvas, drawCanvas].forEach(canvas => {
+      canvas.width = Math.round(rect.width * dpr);
+      canvas.height = Math.round(rect.height * dpr);
+      canvas.style.width = rect.width + "px";
+      canvas.style.height = rect.height + "px";
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    });
+
+    drawBaseImage();
+  }
+
+  function drawBaseImage() {
+    const dpr = getDpr();
+    const cw = baseCanvas.width / dpr;
+    const ch = baseCanvas.height / dpr;
+    baseCtx.clearRect(0, 0, cw, ch);
+    imageBox = null;
+
+    if (imageLoaded && img.naturalWidth > 0 && img.naturalHeight > 0) {
+      const scale = Math.min(cw / img.naturalWidth, ch / img.naturalHeight);
+      const w = img.naturalWidth * scale;
+      const h = img.naturalHeight * scale;
+      const x = (cw - w) / 2;
+      const y = (ch - h) / 2;
+      baseCtx.drawImage(img, x, y, w, h);
+      imageBox = { x, y, w, h };
+    } else {
+      baseCtx.save();
+      baseCtx.fillStyle = "#666";
+      baseCtx.textAlign = "center";
+      baseCtx.font = "14px system-ui, sans-serif";
+      baseCtx.fillText(
+        imageError ? "Imaginea nu s-a putut încărca" : "Se încarcă imaginea…",
+        cw / 2, ch / 2
+      );
+      baseCtx.restore();
+    }
+  }
+
+  function getPos(e) {
+    const rect = drawCanvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  function applyBrush() {
+    drawCtx.lineJoin = "round";
+    drawCtx.lineCap = "round";
+    drawCtx.lineWidth = Number(sizeRange.value) || 4;
+    drawCtx.globalCompositeOperation = mode === "eraser" ? "destination-out" : "source-over";
+    drawCtx.strokeStyle = mode === "eraser" ? "rgba(0,0,0,1)" : colorPicker.value;
+  }
+
+  function start(e) {
+    if (e.button !== undefined && e.button !== 0) return;
+    e.preventDefault();
+    drawing = true;
+    last = getPos(e);
+    try { drawCanvas.setPointerCapture(e.pointerId); } catch (_) {}
+    // A dot is drawn even for a quick tap/click.
+    applyBrush();
+    drawCtx.beginPath();
+    drawCtx.arc(last.x, last.y, Math.max(0.5, (Number(sizeRange.value) || 4) / 2), 0, Math.PI * 2);
+    if (mode === "eraser") {
+      drawCtx.globalCompositeOperation = "destination-out";
+      drawCtx.fillStyle = "rgba(0,0,0,1)";
+    } else {
+      drawCtx.globalCompositeOperation = "source-over";
+      drawCtx.fillStyle = colorPicker.value;
+    }
+    drawCtx.fill();
+  }
+
+  function move(e) {
+    if (!drawing || !last) return;
+    e.preventDefault();
+    const p = getPos(e);
+    applyBrush();
+    drawCtx.beginPath();
+    drawCtx.moveTo(last.x, last.y);
+    drawCtx.lineTo(p.x, p.y);
+    drawCtx.stroke();
+    last = p;
+  }
+
+  function end(e) {
+    drawing = false;
+    last = null;
+    if (e && e.pointerId !== undefined) {
+      try { drawCanvas.releasePointerCapture(e.pointerId); } catch (_) {}
+    }
+  }
+
+  drawCanvas.addEventListener("pointerdown", start);
+  drawCanvas.addEventListener("pointermove", move);
+  drawCanvas.addEventListener("pointerup", end);
+  drawCanvas.addEventListener("pointercancel", end);
+  drawCanvas.addEventListener("lostpointercapture", end);
+
+  clearBtn.addEventListener("click", () => {
+    const dpr = getDpr();
+    drawCtx.clearRect(0, 0, drawCanvas.width / dpr, drawCanvas.height / dpr);
+    drawCtx.globalCompositeOperation = "source-over";
+  });
+
+  function setMode(nextMode) {
+    mode = nextMode;
+    pencilBtn.classList.toggle("active", mode === "pencil");
+    eraserBtn.classList.toggle("active", mode === "eraser");
+    drawCanvas.style.cursor = mode === "eraser" ? "cell" : "crosshair";
+  }
+
+  pencilBtn.addEventListener("click", () => setMode("pencil"));
+  eraserBtn.addEventListener("click", () => setMode("eraser"));
+
+  saveBtn.addEventListener("click", () => {
+    const out = document.createElement("canvas");
+    out.width = baseCanvas.width;
+    out.height = baseCanvas.height;
+    const outCtx = out.getContext("2d");
+    outCtx.drawImage(baseCanvas, 0, 0);
+    outCtx.drawImage(drawCanvas, 0, 0);
+
+    out.toBlob(blob => {
+      if (!blob) {
+        alert("Nu s-a putut salva imaginea. Verifică dacă poza de bază este încărcată.");
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "drawing.png";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }, "image/png");
+  });
+
+  if ("ResizeObserver" in window) {
+    new ResizeObserver(resizeCanvases).observe(wrap);
+  } else {
+    window.addEventListener("resize", resizeCanvases);
+  }
+
+  resizeCanvases();
+  setMode("pencil");
+})();
+</script>
+
+</body>
+</html>
